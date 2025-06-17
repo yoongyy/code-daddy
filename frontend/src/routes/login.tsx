@@ -5,7 +5,7 @@ import { useSimpleAuth } from "#/context/simple-auth-context";
 import { I18nKey } from "#/i18n/declaration";
 
 const HARDCODED_USERNAME = "root";
-const HARDCODED_PASSWORD = "123456";
+const HARDCODED_PASSWORD = "kenny123456";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
