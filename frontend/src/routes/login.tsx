@@ -106,7 +106,7 @@ export default function LoginPage() {
             </button>
           </div>
 
-          <div className="text-center text-sm text-gray-400">
+          {/* <div className="text-center text-sm text-gray-400">
             <p>{t(I18nKey.AUTH$DEMO_CREDENTIALS)}</p>
             <p>
               Username: <span className="text-gray-300 font-mono">root</span>
@@ -114,7 +114,7 @@ export default function LoginPage() {
             <p>
               Password: <span className="text-gray-300 font-mono">123456</span>
             </p>
-          </div>
+          </div> */}
         </form>
       </div>
     </div>
