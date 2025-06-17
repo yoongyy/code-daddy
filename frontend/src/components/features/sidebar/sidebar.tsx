@@ -1,5 +1,5 @@
 import React from "react";
-import { useLocation } from "react-router";
+import { useLocation, useNavigate } from "react-router";
 import { useGitUser } from "#/hooks/query/use-git-user";
 import { UserActions } from "./user-actions";
 import { AllHandsLogoButton } from "#/components/shared/buttons/all-hands-logo-button";
@@ -11,12 +11,14 @@ import { SettingsModal } from "#/components/shared/modals/settings/settings-moda
 import { useSettings } from "#/hooks/query/use-settings";
 import { ConversationPanel } from "../conversation-panel/conversation-panel";
 import { ConversationPanelWrapper } from "../conversation-panel/conversation-panel-wrapper";
-import { useLogout } from "#/hooks/mutation/use-logout";
+
 import { useConfig } from "#/hooks/query/use-config";
 import { displayErrorToast } from "#/utils/custom-toast-handlers";
+import { useSimpleAuth } from "#/context/simple-auth-context";
 
 export function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
   const user = useGitUser();
   const { data: config } = useConfig();
   const {
@@ -25,7 +27,12 @@ export function Sidebar() {
     isError: settingsIsError,
     isFetching: isFetchingSettings,
   } = useSettings();
-  const { mutate: logout } = useLogout();
+  const { logout: simpleLogout } = useSimpleAuth();
+
+  const handleLogout = () => {
+    simpleLogout();
+    navigate("/login");
+  };
 
   const [settingsModalIsOpen, setSettingsModalIsOpen] = React.useState(false);
 
@@ -88,7 +95,7 @@ export function Sidebar() {
               user={
                 user.data ? { avatar_url: user.data.avatar_url } : undefined
               }
-              onLogout={logout}
+              onLogout={handleLogout}
               isLoading={user.isFetching}
             />
           </div>

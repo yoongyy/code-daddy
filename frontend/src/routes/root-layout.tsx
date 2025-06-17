@@ -26,6 +26,7 @@ import { useAutoLogin } from "#/hooks/use-auto-login";
 import { useAuthCallback } from "#/hooks/use-auth-callback";
 import { LOCAL_STORAGE_KEYS } from "#/utils/local-storage";
 import { EmailVerificationGuard } from "#/components/features/guards/email-verification-guard";
+import { ProtectedRoute } from "#/components/shared/protected-route";
 
 export function ErrorBoundary() {
   const error = useRouteError();
@@ -195,39 +196,41 @@ export default function MainApp() {
     loginMethodExists;
 
   return (
-    <div
-      data-testid="root-layout"
-      className="bg-base p-3 h-screen md:min-w-[1024px] flex flex-col md:flex-row gap-3"
-    >
-      <Sidebar />
-
+    <ProtectedRoute>
       <div
-        id="root-outlet"
-        className="h-[calc(100%-50px)] md:h-full w-full relative overflow-auto"
+        data-testid="root-layout"
+        className="bg-base p-3 h-screen md:min-w-[1024px] flex flex-col md:flex-row gap-3"
       >
-        <EmailVerificationGuard>
-          <Outlet />
-        </EmailVerificationGuard>
+        <Sidebar />
+
+        <div
+          id="root-outlet"
+          className="h-[calc(100%-50px)] md:h-full w-full relative overflow-auto"
+        >
+          <EmailVerificationGuard>
+            <Outlet />
+          </EmailVerificationGuard>
+        </div>
+
+        {renderAuthModal && (
+          <AuthModal
+            githubAuthUrl={effectiveGitHubAuthUrl}
+            appMode={config.data?.APP_MODE}
+          />
+        )}
+        {renderReAuthModal && <ReauthModal />}
+        {config.data?.APP_MODE === "oss" && consentFormIsOpen && (
+          <AnalyticsConsentFormModal
+            onClose={() => {
+              setConsentFormIsOpen(false);
+            }}
+          />
+        )}
+
+        {config.data?.FEATURE_FLAGS.ENABLE_BILLING &&
+          config.data?.APP_MODE === "saas" &&
+          settings?.IS_NEW_USER && <SetupPaymentModal />}
       </div>
-
-      {renderAuthModal && (
-        <AuthModal
-          githubAuthUrl={effectiveGitHubAuthUrl}
-          appMode={config.data?.APP_MODE}
-        />
-      )}
-      {renderReAuthModal && <ReauthModal />}
-      {config.data?.APP_MODE === "oss" && consentFormIsOpen && (
-        <AnalyticsConsentFormModal
-          onClose={() => {
-            setConsentFormIsOpen(false);
-          }}
-        />
-      )}
-
-      {config.data?.FEATURE_FLAGS.ENABLE_BILLING &&
-        config.data?.APP_MODE === "saas" &&
-        settings?.IS_NEW_USER && <SetupPaymentModal />}
-    </div>
+    </ProtectedRoute>
   );
 }

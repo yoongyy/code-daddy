@@ -10,6 +10,7 @@ import "./tailwind.css";
 import "./index.css";
 import React from "react";
 import { Toaster } from "react-hot-toast";
+import { SimpleAuthProvider } from "#/context/simple-auth-context";
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
@@ -21,7 +22,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Links />
       </head>
       <body>
-        {children}
+        <SimpleAuthProvider>{children}</SimpleAuthProvider>
         <ScrollRestoration />
         <Scripts />
         <Toaster />
