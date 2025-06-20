@@ -331,7 +331,7 @@ async function waitForAgentReady() {
 // Process message queue when agent is ready
 async function processMessageQueue() {
     // Only process if agent is ready and not already processing
-    if (agentState !== 'awaiting_user_input' || isWaitingForAgent || messageQueue.length === 0) {
+    if ( (agentState !== 'awaiting_user_input' && agentState !== 'finished') || isWaitingForAgent || messageQueue.length === 0) {
         if (messageQueue.length > 0) {
             console.log(`⏳ Waiting for agent to be ready. Current state: ${agentState}, Queue: ${messageQueue.length} messages`);
         }
