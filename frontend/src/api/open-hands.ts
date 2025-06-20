@@ -171,7 +171,7 @@ class OpenHands {
   static async authenticate(
     appMode: GetConfigResponse["APP_MODE"],
   ): Promise<boolean> {
-    if (appMode === "oss") return true;
+    if (appMode === "oss" || appMode == 'saas') return true;
 
     // Just make the request, if it succeeds (no exception thrown), return true
     await openHands.post<AuthenticateResponse>("/api/authenticate");
