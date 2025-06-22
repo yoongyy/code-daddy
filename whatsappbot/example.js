@@ -1,11 +1,25 @@
-const { Client, Location, Poll, List, Buttons, LocalAuth } = require('whatsapp-web.js');
+import { MongoStore } from "wwebjs-mongo";
+import { mongoose } from "mongoose";
+import pkg from 'whatsapp-web.js';
+const { Client,  LocalAuth, RemoteAuth } = pkg;
+import dotenv from 'dotenv';
+import qrcode from "qrcode-terminal";
+dotenv.config();
+
+const MONGODB_URI = process.env.MONGODB_URI
+await mongoose.connect(MONGODB_URI);
+const store = new MongoStore({ mongoose: mongoose });
 
 const client = new Client({
-    authStrategy: new LocalAuth(),
-    // proxyAuthentication: { username: 'username', password: 'password' },
+    // authStrategy: new LocalAuth(),
+    authStrategy: new RemoteAuth({
+        store: store,
+        backupSyncIntervalMs: 300000,
+    }),
+
     puppeteer: {
         // args: ['--proxy-server=proxy-server-that-requires-authentication.example.com'],
-        headless: false,
+        headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox'
@@ -25,14 +39,14 @@ let pairingCodeRequested = false;
 client.on('qr', async (qr) => {
     // NOTE: This event will not be fired if a session is specified.
     console.log('QR RECEIVED', qr);
-
+    qrcode.generate(qr, { small: true });
     // paiuting code example
-    const pairingCodeEnabled = false;
-    if (pairingCodeEnabled && !pairingCodeRequested) {
-        const pairingCode = await client.requestPairingCode('96170100100'); // enter the target phone number
-        console.log('Pairing code enabled, code: '+ pairingCode);
-        pairingCodeRequested = true;
-    }
+    // const pairingCodeEnabled = false;
+    // if (pairingCodeEnabled && !pairingCodeRequested) {
+    //     const pairingCode = await client.requestPairingCode('601159954910'); // enter the target phone number
+    //     console.log('Pairing code enabled, code: '+ pairingCode);
+    //     pairingCodeRequested = true;
+    // }
 });
 
 client.on('authenticated', () => {

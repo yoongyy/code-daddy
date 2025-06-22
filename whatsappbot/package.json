@@ -4,31 +4,34 @@
     "description": "WebSocket test client for OpenHands",
     "main": "test.js",
     "scripts": {
-      "test": "node test.js",
-      "whatsapp": "node whatsapp-bot.js",
-      "whatsapp-simple": "node simple-whatsapp-bot.js",
-      "whatsapp-robust": "node robust-whatsapp-bot.js",
-      "whatsapp-webhook": "node webhook-whatsapp-bot.js",
-      "chat": "node cli-chat-bot.js",
-      "debug": "node debug-websocket.js",
-      "sessions": "node manage-sessions.js",
-      "sessions-clear": "node manage-sessions.js clear",
-      "sessions-fix": "node fix-whatsapp-session.js",
-      "sessions-repair": "node fix-whatsapp-session.js repair",
-      "install-deps": "npm install"
+        "test": "node test.js",
+        "whatsapp": "node whatsapp-bot.js",
+        "whatsapp-simple": "node simple-whatsapp-bot.js",
+        "whatsapp-robust": "node robust-whatsapp-bot.js",
+        "whatsapp-webhook": "node webhook-whatsapp-bot.js",
+        "chat": "node cli-chat-bot.js",
+        "debug": "node debug-websocket.js",
+        "sessions": "node manage-sessions.js",
+        "sessions-clear": "node manage-sessions.js clear",
+        "sessions-fix": "node fix-whatsapp-session.js",
+        "sessions-repair": "node fix-whatsapp-session.js repair",
+        "install-deps": "npm install"
     },
     "dependencies": {
-      "axios": "^1.6.0",
-      "express": "^4.21.2",
-      "qrcode-terminal": "^0.12.0",
-      "socket.io-client": "^4.7.5",
-      "whatsapp-web.js": "^1.23.0"
+        "axios": "^1.6.0",
+        "dotenv": "^16.5.0",
+        "express": "^4.21.2",
+        "mongoose": "^8.0.0",
+        "qrcode-terminal": "^0.12.0",
+        "socket.io-client": "^4.7.5",
+        "whatsapp-web.js": "1.26.1-alpha.3",
+        "wwebjs-mongo": "^1.1.0"
     },
     "keywords": [
-      "websocket",
-      "openhands",
-      "test"
+        "websocket",
+        "openhands",
+        "test"
     ],
     "author": "OpenHands",
     "license": "MIT"
-  }
+}
