@@ -39,14 +39,14 @@ let pairingCodeRequested = false;
 client.on('qr', async (qr) => {
     // NOTE: This event will not be fired if a session is specified.
     console.log('QR RECEIVED', qr);
-    qrcode.generate(qr, { small: true });
+    // qrcode.generate(qr, { small: true });
     // paiuting code example
-    // const pairingCodeEnabled = false;
-    // if (pairingCodeEnabled && !pairingCodeRequested) {
-    //     const pairingCode = await client.requestPairingCode('601159954910'); // enter the target phone number
-    //     console.log('Pairing code enabled, code: '+ pairingCode);
-    //     pairingCodeRequested = true;
-    // }
+    const pairingCodeEnabled = false;
+    if (pairingCodeEnabled && !pairingCodeRequested) {
+        const pairingCode = await client.requestPairingCode('601159954910'); // enter the target phone number
+        console.log('Pairing code enabled, code: '+ pairingCode);
+        pairingCodeRequested = true;
+    }
 });
 
 client.on('authenticated', () => {

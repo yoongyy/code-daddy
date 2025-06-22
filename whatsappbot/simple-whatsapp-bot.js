@@ -1,10 +1,9 @@
-const { Client, LocalAuth, RemoteAuth } = require('whatsapp-web.js');
-const { MongoStore } = require("wwebjs-mongo");
+const { Client, RemoteAuth } = require('whatsapp-web.js');
+const { MongoStore } = require('wwebjs-mongo');
 const qrcode = require('qrcode-terminal');
 const { io } = require('socket.io-client');
 const axios = require('axios');
 const mongoose = require('mongoose');
-require('dotenv').config();
 
 // Configuration
 const OPENHANDS_BASE_URL = 'http://localhost:3000';
@@ -30,7 +29,7 @@ const conversationSchema = new mongoose.Schema({
     updated_at: { type: Date, default: Date.now }
 });
 
-const Conversation = mongoose.model('conversation', conversationSchema);
+const Conversation = mongoose.model('Conversation', conversationSchema);
 
 // Global variables
 let openhandsSocket = null;
@@ -50,19 +49,29 @@ console.log('==========================================');
 // Initialize MongoDB connection
 async function initializeMongoDB() {
     try {
-        await mongoose.connect(MONGODB_URI);
+        // Set connection timeout and other options
+        await mongoose.connect(MONGODB_URI, {
+            serverSelectionTimeoutMS: 10000, // 10 second timeout
+            connectTimeoutMS: 10000,
+            socketTimeoutMS: 10000,
+        });
         console.log('✅ Connected to MongoDB');
+
+        // Test the connection
+        await mongoose.connection.db.admin().ping();
+        console.log('✅ MongoDB connection verified');
+
     } catch (error) {
         console.error('❌ MongoDB connection failed:', error.message);
+        console.error('💡 Make sure MongoDB is running on:', MONGODB_URI);
+        console.error('💡 You can start MongoDB with: mongod --dbpath /path/to/your/db');
         process.exit(1);
     }
 }
 
-// Initialize MongoDB
-initializeMongoDB();
-
-// Create MongoStore for WhatsApp RemoteAuth
-const store = new MongoStore({ mongoose: mongoose });
+// Global variables for WhatsApp client and store
+let client;
+let store;
 
 // Helper function to check if a message should be filtered out
 function shouldFilterMessage(message) {
@@ -129,30 +138,72 @@ function formatMessageForWhatsApp(message) {
     return cleaned;
 }
 
-// Check session status
-const fs = require('fs');
-const sessionPath = './whatsapp-session';
-if (fs.existsSync(sessionPath)) {
-    console.log('📱 Found existing WhatsApp session - will attempt to restore');
-    console.log('⚠️  If the bot hangs, the session may be invalid and will be cleared automatically');
-} else {
-    console.log('📱 No existing session found - QR code will be displayed');
+// Conversation management function
+async function getOrCreateConversation(phoneNumber, senderName) {
+    try {
+        // Check if conversation already exists for this phone number
+        let conversation = await Conversation.findOne({ phone_number: phoneNumber });
+
+        if (conversation) {
+            console.log(`📞 Found existing conversation for ${phoneNumber}: ${conversation.conversation_id}`);
+            return conversation.conversation_id;
+        }
+
+        // Create new conversation if none exists
+        console.log(`📞 Creating new conversation for ${phoneNumber} (${senderName})`);
+
+        // Create conversation via OpenHands API
+        const response = await axios.post(`${OPENHANDS_BASE_URL}/api/conversations`, {}, {
+            headers: {
+                'X-API-Key': SESSION_API_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const conversationId = response.data.conversation_id;
+        console.log(`✅ Created new conversation: ${conversationId}`);
+
+        // Save conversation record to MongoDB
+        conversation = new Conversation({
+            phone_number: phoneNumber,
+            name: senderName,
+            conversation_id: conversationId
+        });
+
+        await conversation.save();
+        console.log(`💾 Saved conversation record to MongoDB`);
+
+        return conversationId;
+
+    } catch (error) {
+        console.error('❌ Error managing conversation:', error.message);
+        throw error;
+    }
 }
 
-// Initialize WhatsApp client with persistent session
-const client = new Client({
-    // authStrategy: new LocalAuth({
-        // clientId: "openhands-simple-bot",
-        // dataPath: "./whatsapp-session" // Persistent session directory
-    // }),
+// Async function to initialize everything in the correct order
+async function initializeBot() {
+    try {
+        // Step 1: Initialize MongoDB connection
+        console.log('🔄 Initializing MongoDB connection...');
+        await initializeMongoDB();
 
+        // Step 2: Create MongoStore after connection is established
+        console.log('🔄 Creating MongoStore...');
+        store = new MongoStore({ mongoose: mongoose });
+        console.log('✅ MongoStore created successfully');
+
+        // Step 3: Initialize WhatsApp client with RemoteAuth
+        console.log('📱 Using RemoteAuth with MongoDB session storage');
+        console.log('📱 Session will be loaded from MongoDB if available, otherwise QR code will be displayed');
+
+        client = new Client({
     authStrategy: new RemoteAuth({
         clientId: "openhands-simple-bot",
         dataPath: "./whatsapp-session", // Backup local session directory
         store: store,
-        backupSyncIntervalMs: 300000,
+        backupSyncIntervalMs: 300000 // Backup every 5 minutes
     }),
-
     puppeteer: {
         headless: true,
         args: [
@@ -179,77 +230,118 @@ const client = new Client({
     }
 });
 
-// WhatsApp authentication events
-client.on('loading_screen', (percent, message) => {
-    console.log(`🔄 Loading WhatsApp: ${percent}% - ${message}`);
-});
+        // Step 4: Set up event handlers
+        setupEventHandlers();
 
-client.on('authenticated', () => {
-    console.log('✅ WhatsApp session authenticated! (Using saved session)');
-});
+        // Step 5: Initialize the client
+        console.log('🔄 Initializing WhatsApp client...');
+        await client.initialize();
 
-client.on('auth_failure', (msg) => {
-    console.error('❌ WhatsApp authentication failed:', msg);
-    console.log('🔄 Session may be invalid. Clearing session...');
-
-    // Clear the invalid session
-    const fs = require('fs');
-    const sessionPath = './whatsapp-session';
-    if (fs.existsSync(sessionPath)) {
-        fs.rmSync(sessionPath, { recursive: true, force: true });
-        console.log('🗑️ Cleared invalid session. Please restart the bot to scan QR again.');
+    } catch (error) {
+        console.error('❌ Bot initialization failed:', error.message);
+        process.exit(1);
     }
-    process.exit(1);
-});
+}
 
-client.on('disconnected', (reason) => {
-    console.log('🔌 WhatsApp disconnected:', reason);
-    if (reason === 'LOGOUT') {
-        console.log('🔄 Logged out from WhatsApp. Clearing session...');
-        const fs = require('fs');
-        const sessionPath = './whatsapp-session';
-        if (fs.existsSync(sessionPath)) {
-            fs.rmSync(sessionPath, { recursive: true, force: true });
-            console.log('🗑️ Session cleared. Please restart the bot to scan QR again.');
+// Function to set up all WhatsApp client event handlers
+function setupEventHandlers() {
+    // WhatsApp authentication events
+    client.on('loading_screen', (percent, message) => {
+            console.log(`🔄 Loading WhatsApp: ${percent}% - ${message}`);
+    });
+
+    client.on('authenticated', () => {
+            console.log('✅ WhatsApp session authenticated! (Using saved session)');
+    });
+
+        // RemoteAuth specific events
+    client.on('remote_session_saved', () => {
+            console.log('💾 WhatsApp session saved to MongoDB');
+    });
+
+    client.on('remote_session_loaded', () => {
+            console.log('📥 WhatsApp session loaded from MongoDB');
+    });
+
+    client.on('auth_failure', async (msg) => {
+        console.error('❌ WhatsApp authentication failed:', msg);
+        console.log('🔄 Session may be invalid. Clearing session...');
+
+        try {
+            // Clear the invalid session from MongoDB store
+            await store.delete({ session: 'openhands-simple-bot' });
+            console.log('🗑️ Cleared invalid session from MongoDB');
+
+            // Also clear local backup session
+            const fs = require('fs');
+            const sessionPath = './whatsapp-session';
+            if (fs.existsSync(sessionPath)) {
+                fs.rmSync(sessionPath, { recursive: true, force: true });
+                console.log('🗑️ Cleared local backup session');
+            }
+
+            console.log('🔄 Please restart the bot to scan QR again.');
+        } catch (error) {
+            console.error('❌ Error clearing session:', error.message);
         }
-    }
+
+        process.exit(1);
 });
 
-client.on('qr', (qr) => {
-    console.log('\n📱 FIRST TIME SETUP - SCAN THIS QR CODE:');
-    console.log('==========================================');
-    console.log('⚠️  You only need to scan this ONCE!');
-    console.log('⚠️  After scanning, the session will be saved for future use.');
-    console.log('');
-    qrcode.generate(qr, { small: true });
-    console.log('\n📋 Steps:');
-    console.log('1. Open WhatsApp on your phone');
-    console.log('2. Go to Settings > Linked Devices');
-    console.log('3. Tap "Link a Device"');
-    console.log('4. Scan the QR code above');
-    console.log('5. Session will be saved automatically!');
-    console.log('6. Next time you run the bot, no QR scan needed! 🎉\n');
+    client.on('disconnected', async (reason) => {
+        console.log('🔌 WhatsApp disconnected:', reason);
+        if (reason === 'LOGOUT') {
+            console.log('🔄 Logged out from WhatsApp. Clearing session...');
+
+            try {
+                // Clear session from MongoDB store
+                await store.delete({ session: 'openhands-simple-bot' });
+                console.log('🗑️ Cleared session from MongoDB');
+
+                // Also clear local backup session
+                const fs = require('fs');
+                const sessionPath = './whatsapp-session';
+                if (fs.existsSync(sessionPath)) {
+                    fs.rmSync(sessionPath, { recursive: true, force: true });
+                    console.log('🗑️ Cleared local backup session');
+                }
+
+                console.log('🔄 Please restart the bot to scan QR again.');
+            } catch (error) {
+                console.error('❌ Error clearing session:', error.message);
+            }
+        }
+});
+
+    client.on('qr', (qr) => {
+        console.log('\n📱 FIRST TIME SETUP - SCAN THIS QR CODE:');
+        console.log('==========================================');
+        console.log('⚠️  You only need to scan this ONCE!');
+        console.log('⚠️  After scanning, the session will be saved to MongoDB for future use.');
+        console.log('');
+        qrcode.generate(qr, { small: true });
+        console.log('\n📋 Steps:');
+        console.log('1. Open WhatsApp on your phone');
+        console.log('2. Go to Settings > Linked Devices');
+        console.log('3. Tap "Link a Device"');
+        console.log('4. Scan the QR code above');
+        console.log('5. Session will be saved automatically!');
+        console.log('6. Next time you run the bot, no QR scan needed! 🎉\n');
 });
 
 // WhatsApp ready event
-client.on('ready', async () => {
-    isReady = true;
-    clearTimeout(initializationTimeout);
+    client.on('ready', async () => {
+        isReady = true;
+        clearTimeout(initializationTimeout);
 
-    console.log('✅ WhatsApp connected successfully!');
-    console.log('💾 Session has been saved - no QR scan needed next time!');
-    whatsappClient = client;
+        console.log('✅ WhatsApp connected successfully!');
+        console.log('💾 Session has been saved - no QR scan needed next time!');
+        whatsappClient = client;
 
-    // Initialize OpenHands
-    // await initializeOpenHands();
-
-    // Wait for agent to be ready
-    // await waitForAgentReady();
-
-    console.log('\n🎉 Bot is ready! Send a WhatsApp message to chat with OpenHands agent.');
-    console.log('📝 Example: "Create a Python script that prints Hello World"');
-    console.log('🔄 To restart the bot later, just run: npm run whatsapp-simple');
-    console.log('💡 Each WhatsApp number will have its own persistent conversation.');
+        console.log('\n🎉 Bot is ready! Send a WhatsApp message to chat with OpenHands agent.');
+        console.log('📝 Example: "Create a Python script that prints Hello World"');
+        console.log('🔄 To restart the bot later, just run: npm run whatsapp-simple');
+        console.log('💡 Each WhatsApp number will have its own persistent conversation.');
 });
 
 // MongoDB conversation management functions
@@ -293,38 +385,12 @@ async function updateConversationTimestamp(phoneNumber) {
 
 async function initializeConversationForUser(phoneNumber, userName) {
     try {
-        // Check if conversation already exists
-        const existingConversation = await findExistingConversation(phoneNumber);
+        // Use the new conversation management function
+        currentConversationId = await getOrCreateConversation(phoneNumber, userName);
 
-        if (existingConversation) {
-            console.log(`✅ Found existing conversation for ${phoneNumber}: ${existingConversation.conversation_id}`);
-            currentConversationId = existingConversation.conversation_id;
-
-            // Reconnect to existing conversation
-            await connectWebSocket();
-            await waitForAgentReady();
-
-        } else {
-            console.log(`🆕 Creating new conversation for ${phoneNumber}...`);
-
-            // Create new conversation in OpenHands
-            const response = await axios.post(`${OPENHANDS_BASE_URL}/api/conversations`, {}, {
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Session-API-Key': SESSION_API_KEY
-                }
-            });
-
-            currentConversationId = response.data.conversation_id;
-            console.log(`✅ New conversation created: ${currentConversationId}`);
-
-            // Save to MongoDB
-            await createNewConversationRecord(phoneNumber, userName, currentConversationId);
-
-            // Connect WebSocket
-            await connectWebSocket();
-            await waitForAgentReady();
-        }
+        // Connect WebSocket for this conversation
+        await connectWebSocket();
+        await waitForAgentReady();
 
     } catch (error) {
         console.error('❌ Failed to initialize conversation:', error.message);
@@ -333,71 +399,62 @@ async function initializeConversationForUser(phoneNumber, userName) {
 }
 
 // WhatsApp message event
-client.on('message', async (message) => {
-    if (message.fromMe) return; // Ignore messages sent by the bot
+    client.on('message', async (message) => {
+        if (message.fromMe) return; // Ignore messages sent by the bot
 
-    const contact = await message.getContact();
-    const chat = await message.getChat();
-    const userName = contact.pushname || contact.number;
-    const phoneNumber = contact.number;
+        const contact = await message.getContact();
+        const chat = await message.getChat();
+        const userName = contact.pushname || contact.number;
+        const phoneNumber = contact.number;
 
-    console.log(`\n📨 Message from ${userName} (${phoneNumber}): "${message.body}"`);
+        console.log(`\n📨 Message from ${userName} (${phoneNumber}): "${message.body}"`);
 
-    // Set current chat and user info for responses
-    currentWhatsAppChat = chat;
-    currentUserPhoneNumber = phoneNumber;
-    currentUserName = userName;
+        // Set current chat and user info for responses
+        currentWhatsAppChat = chat;
+        currentUserPhoneNumber = phoneNumber;
+        currentUserName = userName;
 
-    // Check if we need to initialize conversation for this user
-    if (!currentConversationId || currentUserPhoneNumber !== phoneNumber) {
-        console.log(`🔍 Checking conversation for ${phoneNumber}...`);
-        await initializeConversationForUser(phoneNumber, userName);
-    }
+        // Check if we need to initialize conversation for this user
+        if (!currentConversationId || currentUserPhoneNumber !== phoneNumber) {
+            console.log(`🔍 Checking conversation for ${phoneNumber}...`);
+            await initializeConversationForUser(phoneNumber, userName);
+        }
 
-    // Update conversation timestamp
-    await updateConversationTimestamp(phoneNumber);
+        // Update conversation timestamp
+        await updateConversationTimestamp(phoneNumber);
 
-    // Add message to queue
-    messageQueue.push({
-        text: message.body,
-        chat: chat,
-        userName: userName,
-        timestamp: Date.now()
+        // Add message to queue
+        messageQueue.push({
+            text: message.body,
+            chat: chat,
+            userName: userName,
+            timestamp: Date.now()
     });
 
-    console.log(`📝 Message queued. Queue length: ${messageQueue.length}`);
-    console.log(`🔄 Agent state: ${agentState || 'unknown'}`);
+        console.log(`📝 Message queued. Queue length: ${messageQueue.length}`);
+        console.log(`🔄 Agent state: ${agentState || 'unknown'}`);
 
-    // Notify user if agent is busy
-    if (agentState !== 'awaiting_user_input' || isWaitingForAgent) {
-        await chat.sendMessage('🤖 I received your message! I\'m currently processing another request. Your message is queued and will be processed when I\'m ready.');
-    }
+        // Notify user if agent is busy
+        if (agentState !== 'awaiting_user_input' || isWaitingForAgent) {
+            await chat.sendMessage('🤖 I received your message! I\'m currently processing another request. Your message is queued and will be processed when I\'m ready.');
+        }
 
-    // Process queue if agent is ready
-    await processMessageQueue();
+        // Process queue if agent is ready
+        await processMessageQueue();
 });
+}
 
-// OpenHands initialization
-async function initializeOpenHands() {
+async function initializeConversationForUser(phoneNumber, userName) {
     try {
-        console.log('🚀 Connecting to OpenHands...');
+        // Use the new conversation management function
+        currentConversationId = await getOrCreateConversation(phoneNumber, userName);
 
-        // Create conversation (no settings needed)
-        const response = await axios.post(`${OPENHANDS_BASE_URL}/api/conversations`, {}, {
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Session-API-Key': SESSION_API_KEY
-            }
-        });
-
-        currentConversationId = response.data.conversation_id;
-        console.log(`✅ Conversation created: ${currentConversationId}`);
-
-        // Connect WebSocket
+        // Connect WebSocket for this conversation
         await connectWebSocket();
+        await waitForAgentReady();
 
     } catch (error) {
-        console.error('❌ OpenHands initialization failed:', error.message);
+        console.error('❌ Failed to initialize conversation:', error.message);
         throw error;
     }
 }
@@ -500,9 +557,8 @@ async function handleAgentEvent(event) {
         return;
     }
 
-    // 2. Handle agent messages(main responses)
+    // 2. Handle agent messages (main responses)
     if (event.source === 'agent' && event.action === 'message' && event.message) {
-        // sendToWhatsApp(`🤖 ${event.message}`);
         if (!shouldFilterMessage(event.message)) {
             sendToWhatsApp(event.message);
         }
@@ -591,26 +647,6 @@ async function handleAgentEvent(event) {
     // - Internal thinking processes
     // - Setup/initialization messages
     // - Raw command actions without meaningful output
-
-    // Handle command outputs
-    // if (event.source === 'environment' && event.observation === 'run' && event.content) {
-    //     const output = event.content.trim();
-    //     if (output && currentWhatsAppChat) {
-    //         sendToWhatsApp(`📋 Output:\n\`\`\`\n${output}\n\`\`\``);
-    //     }
-    // }
-
-    // Handle file creation/editing
-    // if (event.source === 'agent' && (event.action === 'create' || event.action === 'edit')) {
-    //     const action = event.action;
-    //     const path = event.args?.path || 'file';
-    //     sendToWhatsApp(`📝 ${action === 'create' ? 'Created' : 'Edited'} file: ${path}`);
-    // }
-
-    // Handle thinking/reasoning
-    // if (event.source === 'agent' && event.action === 'think' && event.args?.thought) {
-    //     sendToWhatsApp(`💭 Thinking: ${event.args.thought}`);
-    // }
 }
 
 // Wait for agent to reach awaiting_user_input state
@@ -712,9 +748,17 @@ async function sendToWhatsApp(message) {
         return;
     }
 
+    // Format and clean the message
+    const formattedMessage = formatMessageForWhatsApp(message);
+
+    if (!formattedMessage) {
+        console.log('⚠️ Message filtered out (empty after formatting)');
+        return;
+    }
+
     try {
-        console.log(`📱 Sending to WhatsApp: "${message}"`);
-        await currentWhatsAppChat.sendMessage(message);
+        console.log(`📱 Sending to WhatsApp: "${formattedMessage.substring(0, 100)}${formattedMessage.length > 100 ? '...' : ''}"`);
+        await currentWhatsAppChat.sendMessage(formattedMessage);
     } catch (error) {
         console.error('❌ Failed to send WhatsApp message:', error.message);
     }
@@ -766,6 +810,6 @@ initializationTimeout = setTimeout(() => {
 }, 60000); // 60 second timeout
 
 // Start the bot
-console.log('🚀 Starting WhatsApp client...');
-console.log('⏳ If this hangs for more than 60 seconds, the session will be reset automatically...');
-client.initialize();
+console.log('🚀 Starting WhatsApp Bot...');
+console.log('⏳ Initializing MongoDB and WhatsApp client...');
+initializeBot();

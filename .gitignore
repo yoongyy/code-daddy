@@ -255,3 +255,4 @@ containers/runtime/code
 
 whatsappbot/.wwebjs_auth/
 whatsappbot/.wwebjs_cache/
+whatsappbot/whatsapp-session/
