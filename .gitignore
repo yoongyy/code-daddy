@@ -253,6 +253,7 @@ containers/runtime/project.tar.gz
 containers/runtime/code
 **/node_modules/
 
+whatsappbot/package-lock.json
 whatsappbot/.wwebjs_auth/
 whatsappbot/.wwebjs_cache/
 whatsappbot/whatsapp-session/
