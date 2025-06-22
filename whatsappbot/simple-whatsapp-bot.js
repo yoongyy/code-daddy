@@ -4,6 +4,8 @@ const qrcode = require('qrcode-terminal');
 const { io } = require('socket.io-client');
 const axios = require('axios');
 const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+dotenv.config();
 
 // Configuration
 const OPENHANDS_BASE_URL = 'http://localhost:3000';
@@ -199,8 +201,8 @@ async function initializeBot() {
 
         client = new Client({
     authStrategy: new RemoteAuth({
-        clientId: "openhands-simple-bot",
-        dataPath: "./whatsapp-session", // Backup local session directory
+        // clientId: "openhands-simple-bot",
+        // dataPath: "./whatsapp-session", // Backup local session directory
         store: store,
         backupSyncIntervalMs: 300000 // Backup every 5 minutes
     }),
